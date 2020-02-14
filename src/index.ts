@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { Exchange } from './exchange';
 import { QueueManager } from './queue';
 import { Producer } from './producer';
-import { Message } from './message';
+import { Consumer } from './consumer';
 
 interface PgBrokerSettings {
     schema: string
@@ -48,7 +48,11 @@ export class PgBroker {
         return this.producer.produce<T>(message, exchangeName, queueName);
     }
 
-    subscribe = async <T>(queueName: string, callback: (message: T) => void) => {  
-        await this.queueManager.subscribe(queueName, callback);
+    subscribe = async <T>(queueName: string, callback: (message: T) => void): Promise<Consumer> => {  
+        const consumer = new Consumer(this.db, this.config.schema, this.queueManager);
+
+        await consumer.subscribe(queueName, callback);
+
+        return consumer;
     }
 };

@@ -17,19 +17,31 @@ export class QueueManager {
         RETURNS trigger AS
         $$
         BEGIN
-            PERFORM pg_notify('${queueName}_channel', row_to_json(NEW)::text);
+            PERFORM pg_notify('${queueName}_channel', NEW.queue_id);
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql`,
 
         `DROP TRIGGER IF EXISTS ${queueName}_status ON ${schema}.message_queue RESTRICT`,
         `CREATE TRIGGER ${queueName}_status
-            AFTER INSERT OR UPDATE OF message_id
+            AFTER INSERT
             ON ${schema}.message_queue
             FOR EACH ROW
             WHEN (NEW.queue_id = '${queueId}')
         EXECUTE PROCEDURE ${schema}.${queueName}_notify()`
     ]
+
+    private static getNextMessage = (schema: string) => `
+        DELETE FROM ${schema}.message_queue
+        WHERE message_id = (
+            SELECT message_id FROM ${schema}.message_queue
+            WHERE queue_id = $1
+            ORDER BY created_at 
+            FOR UPDATE SKIP LOCKED 
+            LIMIT 1
+        )
+        RETURNING message_id, message;
+    `
 
     private exists = async (queueName: string) => {
         const res = await this.pool.query(
@@ -83,27 +95,38 @@ export class QueueManager {
         return newQueueId;
     }
 
-    subscribe = (queueName: string, callback: (message: Message) => void) => {
+    private tryGetMessage = async <T>(queueId: string, callback: (message: T) => void): Promise<Boolean> => {
+        console.log('DEBUG trying to get next message', {queueId});
+        const res = await this.pool.query(QueueManager.getNextMessage(this.schema), [queueId]);
+        if (!res.rowCount) {
+            console.log('DEBUG no message available', {queueId});
+            return false;
+        }
+        const message = res.rows[0];
+        callback(JSON.parse(message.message) as T);
+        return true;
+    }
+
+    // TODO: seperate this to Consumer
+    subscribe = async <T>(queueName: string, callback: (message: T) => void) => {
+        const subscriberId = uuid();
+
+        const id = await this.exists(queueName);
+        if (!id) {
+            throw new Error(`queue ${queueName} does not exist`);
+        }
+
+        //initially, see if anything is currently queued
+        while (await this.tryGetMessage(id, callback)){}
+
         return new Promise(res => this.pool.connect(async (err, client, done) => {
             await client.query(`LISTEN ${queueName}_channel`);
             res();
-            client.on('notification', msg => { //TODO: just get message_id and use skip_lock
-                if (!msg.payload) {
-                    console.warn(`empty message payload: ${msg}`);
-                }
-
-                const pgMsg: PostgresMessage = JSON.parse(msg.payload as string);
-
-                const message: Message = {message: JSON.parse(pgMsg.message), name: ''}
-                console.log(`DEBUG: sending message`,{message});
-                callback(message);
+            client.on('notification', msg => {
+                const queueId = msg.payload as string;
+                console.log('DEBUG received notification', {queueId})
+                this.tryGetMessage(queueId, callback);
             })
         }))
     }
-}
-
-interface PostgresMessage {
-    queue_id: string
-    message_id: string
-    message: string
 }

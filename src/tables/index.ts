@@ -30,6 +30,7 @@ const getSqlStatments = (schema: string) => ({
             queue_id varchar(36) REFERENCES ${schema}.queue(queue_id) ON DELETE CASCADE,
             message_id varchar(36) NOT NULL,
             message text,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT message_queue_pk PRIMARY KEY(message_id, queue_id)
         )
     `,

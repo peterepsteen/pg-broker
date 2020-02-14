@@ -55,22 +55,27 @@ test('should send to queue', async () => {
         resolve = r;
     });
 
+    let calls = 0;
     const hey = (msg: Message) => {
-        expect(msg.message).toEqual(messagePayload)
+        console.log('---------- MESSAGE', {msg})
+        expect(msg).toEqual(messagePayload)
+        calls++;
         resolve();
     }
 
     await broker.subscribe(queueName, hey);
+    await broker.subscribe(queueName, hey);
+    await broker.subscribe(queueName, hey);
 
-    const message: Message = {message: messagePayload, name: ''};
-    const messageId = await broker.produce(message, '', queueName);
+    const messageId = await broker.produce(messagePayload, '', queueName);
     expect(messageId).toBeTruthy()
 
-    const noId = await broker.produce(message, '', 'queue_doesnt_exist');
+    const noId = await broker.produce(messagePayload, '', 'queue_doesnt_exist');
+    expect(noId).toBeFalsy()
 
     await promise;
-
-    expect(noId).toBeFalsy()
+    await new Promise(r => setTimeout(r, 2000));
+    expect(calls).toEqual(1);
 });
 
 
@@ -83,5 +88,3 @@ function makeid(length: number) {
    }
    return result;
 }
-
-console.log(makeid(5));

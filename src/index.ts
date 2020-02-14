@@ -44,11 +44,11 @@ export class PgBroker {
         return id;
     }
 
-    produce = async (message: Message, exchangeName?: string, queueName?: string) => {
-        return this.producer.produce(message, exchangeName, queueName);
+    produce = async <T>(message: T, exchangeName?: string, queueName?: string) => {
+        return this.producer.produce<T>(message, exchangeName, queueName);
     }
 
-    subscribe = async (queueName: string, callback: (message: Message) => void) => {  
+    subscribe = async <T>(queueName: string, callback: (message: T) => void) => {  
         await this.queueManager.subscribe(queueName, callback);
     }
 };

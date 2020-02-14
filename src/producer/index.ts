@@ -17,14 +17,14 @@ const insertToBoundQueuesSql = (schema: string) => `
 export class Producer {
     constructor(private pool: Pool, private schema: string){}
 
-    private toExchange = (message: Message, exchange: string) => {
+    private toExchange = <T>(message: T, exchange: string) => {
         // get all queues currently bound to queue
 
         // create entries in queue_message
     }
 
-    private toQueue = async (message: Message, queueName: string) => {
-        const messageText = JSON.stringify(message.message);
+    private toQueue = async <T>(message: T, queueName: string) => {
+        const messageText = JSON.stringify(message);
         const res = await this.pool.query(
             insertToBoundQueuesSql(this.schema), 
             [uuid(), messageText, queueName]
@@ -38,7 +38,7 @@ export class Producer {
         return res.rows[0].message_id
     }
 
-    produce = (message: Message, exchangeName?: string, queueName?: string) => {
+    produce = <T>(message: T, exchangeName?: string, queueName?: string) => {
         if (exchangeName && queueName) {
             console.warn(`Producing messages for both a specific exhange and queue not supported. Using exchange ${exchangeName}`);
             queueName = '';

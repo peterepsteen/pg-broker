@@ -10,8 +10,8 @@ const getNextMessageSQL = (schema: string) => `
             ORDER BY created_at 
             FOR UPDATE SKIP LOCKED 
             LIMIT 1
-        )
-    RETURNING message_id, message;
+        ) AND queue_id = $1
+    RETURNING queue_id, message_id, message;
 `
 
 export class Consumer {
@@ -33,6 +33,7 @@ export class Consumer {
             return false;
         }
         
+        console.log(`DEBUG ${this.id} got message`, {queueId});
         try {
             const {message} = res.rows[0];
             const typedMessage = JSON.parse(message) as T
@@ -46,10 +47,8 @@ export class Consumer {
     }
 
     subscribe = async <T>(queueName: string, callback: (message: T) => void) => {
-        const id = await this.queueManager.exists(queueName);
-        if (!id) {
-            throw new Error(`queue ${queueName} does not exist`);
-        }
+        console.log('DEBUG subscribing to queue', {queueName});
+        const id = await this.queueManager.getQueueId(queueName);
 
         //initially, see if anything is currently queued
         while (await this.tryGetMessage(id, callback)){}
@@ -63,9 +62,9 @@ export class Consumer {
 
             client.on('notification', msg => {
                 const queueId = msg.payload as string;
-                console.log(`DEBUG ${this.id} received notification`, {queueId})
+                console.log(`DEBUG ${this.id} received notification`, {queueId, queueName})
                 this.tryGetMessage(queueId, callback);
-            })
+            });
         }));
     }
 }

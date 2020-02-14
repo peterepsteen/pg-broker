@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { Message } from '../message';
 import uuid = require('uuid');
+import { ExchangeManager } from '../exchange';
 
 const insertToBoundQueuesSql = (schema: string) => `
     INSERT INTO ${schema}.message_queue (
@@ -15,12 +16,38 @@ const insertToBoundQueuesSql = (schema: string) => `
 `;
 
 export class Producer {
-    constructor(private pool: Pool, private schema: string){}
+    constructor(private pool: Pool, private schema: string, private exchangeManager: ExchangeManager){}
+    
+    get insertToExchangeSQL() {
+        return `
+            INSERT INTO ${this.schema}.message_queue (
+                queue_id,
+                message_id,
+                message
+            )
+            SELECT queue_id, $1, $2
+            FROM ${this.schema}.exchange_queue
+            WHERE exchange_id = $3
+            RETURNING message_id
+        `
+    }
+    private toExchange = async <T>(message: T, exchange: string) => {
+        const messageText: string = JSON.stringify(message);
+        const exchangeId: string = await this.exchangeManager.getExchangeId(exchange);
+        const res = await this.pool.query(
+            this.insertToExchangeSQL,
+            [uuid(), messageText, exchangeId]
+        );
 
-    private toExchange = <T>(message: T, exchange: string) => {
-        // get all queues currently bound to queue
+        if (!res.rowCount) {
+            console.warn(
+                `Exchange ${exchange} has no bound queues, message dropped`, 
+                {exchange: {name: exchange, id: exchangeId}}
+            );
+            return '';
+        }
 
-        // create entries in queue_message
+        return res.rows[0].message_id;
     }
 
     private toQueue = async <T>(message: T, queueName: string) => {

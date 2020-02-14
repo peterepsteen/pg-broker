@@ -1,6 +1,6 @@
 import {getTableDefinitions} from './tables'
 import { Pool } from 'pg';
-import { Exchange } from './exchange';
+import { ExchangeManager } from './exchange';
 import { QueueManager } from './queue';
 import { Producer } from './producer';
 import { Consumer } from './consumer';
@@ -18,12 +18,14 @@ export class PgBroker {
     private config: PgBrokerSettings;
     private producer: Producer;
     private queueManager: QueueManager;
+    private exchangeManager: ExchangeManager;
 
     constructor(config?: PgBrokerSettings) {
         this.db = new Pool();
         this.config = Object.assign(configDefaults, config);
-        this.producer = new Producer(this.db, this.config.schema);
-        this.queueManager = new QueueManager(this.db, this.config.schema);
+        this.exchangeManager = new ExchangeManager(this.db, this.config.schema);
+        this.producer = new Producer(this.db, this.config.schema, this.exchangeManager);
+        this.queueManager = new QueueManager(this.db, this.config.schema, this.exchangeManager);
     }
 
     start = async () => {
@@ -34,7 +36,9 @@ export class PgBroker {
     }
 
     declareExchange = async (name: string) => {
-        const id = await Exchange.assert(this.db, this.config.schema, name)
+        console.log('DEBUG creating exchange', {name});
+        const id = await this.exchangeManager.assert(name)
+        console.log('DEBUG created exchange', {name, id});
         return id;
     }
 
@@ -54,5 +58,9 @@ export class PgBroker {
         await consumer.subscribe(queueName, callback);
 
         return consumer;
+    }
+
+    bindQueueToExchange = async (queueName: string, exchangeName: string) => {
+        await this.queueManager.bindQueueToExchange(queueName, exchangeName);
     }
 };

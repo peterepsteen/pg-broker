@@ -1,9 +1,10 @@
 import { Pool, Client } from 'pg';
 import uuid = require('uuid');
 import { Message } from '../message';
+import { ExchangeManager } from '../exchange';
 
 export class QueueManager {
-    constructor(private pool: Pool, private schema: string) {}
+    constructor(private pool: Pool, private schema: string, private exchangeManager: ExchangeManager) {}
 
     private static insertQueueSql = (schema: string) => `
         INSERT INTO ${schema}.queue (queue_name, queue_id) 
@@ -40,6 +41,32 @@ export class QueueManager {
             return '';
         }
         return res.rows[0].queue_id as string;
+    }
+
+    // alias for exists but throws error if not exists
+    getQueueId = async (queueName: string): Promise<string> => {
+        const id = await this.exists(queueName)
+        if (!id) {
+            throw new Error(`queue ${queueName} does not exist`);
+        }
+        return id;
+    } 
+
+    get bindSql() {
+        return `
+            INSERT INTO ${this.schema}.exchange_queue (exchange_id, queue_id)
+            VALUES ($1, $2)
+            ON CONFLICT(exchange_id, queue_id) DO NOTHING
+        `;
+    }
+
+    async bindQueueToExchange(queueName: string, exchangeName: string) {
+        console.log('DEBUG binding queue to exchange', {queueName, exchangeName});
+        const queueID = await this.getQueueId(queueName);
+        const exchangeID = await this.exchangeManager.getExchangeId(exchangeName);
+        console.log('DEBUG binding queue to exchange', {queueID, exchangeID});
+        await this.pool.query(this.bindSql, [exchangeID, queueID]); 
+        console.log('DEBUG bound queue to exchange', {queueID, exchangeID});
     }
 
     //assert creates or validates that the queue exists, returning the id
